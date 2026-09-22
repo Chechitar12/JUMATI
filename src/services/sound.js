@@ -5,7 +5,7 @@ let enabled = true;
 let musicGain = null;
 
 /* =========================================================
-   AUDIO SEGURO PARA PC / ANDROID / IPHONE / IPAD
+   AUDIO SEGURO - PC / ANDROID / IPHONE / IPAD
    ========================================================= */
 
 const ensure = () => {
@@ -43,6 +43,46 @@ const ensure = () => {
   } catch (error) {
     console.warn("Audio no disponible:", error);
     return null;
+  }
+};
+
+/* =========================================================
+   DESBLOQUEO DE AUDIO PARA IPHONE / SAFARI
+   Se ejecutará después de una interacción del usuario.
+   ========================================================= */
+
+export const unlockAudio = async () => {
+  try {
+    const c = ensure();
+
+    if (c && c.state === "suspended") {
+      try {
+        await c.resume();
+      } catch (error) {
+        console.warn("Safari no permitió reanudar AudioContext:", error);
+      }
+    }
+
+    if ("speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.getVoices();
+
+        window.speechSynthesis.onvoiceschanged = () => {
+          try {
+            window.speechSynthesis.getVoices();
+          } catch (error) {
+            console.warn("No se pudieron cargar las voces:", error);
+          }
+        };
+      } catch (error) {
+        console.warn("No se pudieron inicializar las voces:", error);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.warn("No se pudo desbloquear el audio:", error);
+    return false;
   }
 };
 
@@ -140,7 +180,7 @@ export const correctSound = () => {
     tone(659, 0.12, "triangle", 0.65, 0.1);
     tone(784, 0.2, "triangle", 0.75, 0.2);
   } catch (error) {
-    console.warn(error);
+    console.warn("Sonido correcto no disponible:", error);
   }
 };
 
@@ -149,7 +189,7 @@ export const wrongSound = () => {
     tone(240, 0.12, "sine", 0.25);
     tone(190, 0.18, "sine", 0.2, 0.12);
   } catch (error) {
-    console.warn(error);
+    console.warn("Sonido incorrecto no disponible:", error);
   }
 };
 
@@ -158,7 +198,7 @@ export const pieceSound = () => {
     tone(740, 0.07, "sine", 0.3);
     tone(880, 0.09, "sine", 0.28, 0.06);
   } catch (error) {
-    console.warn(error);
+    console.warn("Sonido de pieza no disponible:", error);
   }
 };
 
@@ -174,7 +214,7 @@ export const winSound = () => {
       );
     });
   } catch (error) {
-    console.warn(error);
+    console.warn("Sonido de victoria no disponible:", error);
   }
 };
 
@@ -232,7 +272,7 @@ export const startMusic = (theme = 0) => {
 
         i++;
       } catch (error) {
-        console.warn(error);
+        console.warn("Error reproduciendo música:", error);
       }
     };
 
@@ -340,10 +380,10 @@ export function speak(
     }
 
     /*
-      El audio de voz no debe bloquear
-      el funcionamiento de JUMATI.
+      Intentamos mantener el AudioContext activo,
+      pero un fallo de Web Audio nunca debe impedir
+      que JUMATI continúe funcionando.
     */
-
     const c = ensure();
 
     if (c && musicGain) {
@@ -353,10 +393,22 @@ export function speak(
           c.currentTime,
           0.05
         );
-      } catch (error) {}
+      } catch (error) {
+        // No interrumpir la voz.
+      }
     }
 
-    window.speechSynthesis.cancel();
+    const synthesis = window.speechSynthesis;
+
+    /*
+      Safari/iOS puede quedarse con una locución
+      anterior en cola. La cancelamos antes de hablar.
+    */
+    try {
+      synthesis.cancel();
+    } catch (error) {
+      console.warn("No se pudo limpiar la cola de voz:", error);
+    }
 
     const utterance =
       new SpeechSynthesisUtterance(text);
@@ -385,19 +437,34 @@ export function speak(
             0.15
           );
         }
-      } catch (error) {}
+      } catch (error) {
+        // No bloquear la aplicación.
+      }
     };
 
     utterance.onend = restoreMusic;
     utterance.onerror = restoreMusic;
 
-    window.speechSynthesis.speak(utterance);
+    /*
+      Pequeño reinicio para Safari/iOS.
+      Se ejecuta después de cancelar la cola.
+    */
+    setTimeout(() => {
+      try {
+        synthesis.speak(utterance);
+      } catch (error) {
+        console.warn(
+          "Safari no pudo reproducir la voz:",
+          error
+        );
+
+        restoreMusic();
+      }
+    }, 40);
 
   } catch (error) {
     /*
-      MUY IMPORTANTE:
-      Si Safari no permite voz/audio,
-      la aplicación continúa funcionando.
+      La voz nunca debe bloquear la navegación.
     */
     console.warn(
       "Síntesis de voz no disponible:",
@@ -407,7 +474,7 @@ export function speak(
 }
 
 /* =========================================================
-   MENSAJES
+   MENSAJES DE VOZ
    ========================================================= */
 
 export const speakCorrect = gender =>
@@ -436,7 +503,7 @@ export const speakPuzzleComplete = gender =>
   );
 
 /* =========================================================
-   GRAMÁTICA
+   NÚMEROS Y GRAMÁTICA
    ========================================================= */
 
 const words = [
@@ -477,7 +544,7 @@ const quantified = (item, n) => {
 };
 
 /* =========================================================
-   INSTRUCCIONES MATEMÁTICAS
+   INSTRUCCIONES DE MATEMÁTICAS
    ========================================================= */
 
 export const speakMathInstruction = (
@@ -528,7 +595,7 @@ export const speakMathInstruction = (
 };
 
 /* =========================================================
-   ROMPECABEZAS
+   INSTRUCCIONES DE ROMPECABEZAS
    ========================================================= */
 
 export const speakPuzzleInstruction = gender =>
